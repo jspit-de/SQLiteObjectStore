@@ -34,6 +34,10 @@ var_dump($dataCopy);
 echo '</pre>';
 ```
 
+### Demo and Test
+
+http://jspit.de/check/phpcheck.class.sqliteobjectstore.php
+
 ### Limitations
 
 Not usable for resources, closures and objects with closures

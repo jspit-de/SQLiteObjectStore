@@ -2,11 +2,11 @@
 /**
 .---------------------------------------------------------------------------.
 |  Software: SQLiteObjectStore - PHP class                                  |
-|   Version: 1.1                                                            |
-|      Date: 22.12.2017                                                     |
+|   Version: 1.2                                                            |
+|      Date: 2018-01-02                                                     |
 |      Site:                                                                |
 | ------------------------------------------------------------------------- |
-| Copyright (c) 2017-2018, Peter Junk alias jspit All Rights Reserved.      |
+| Copyright © 2017-2018, Peter Junk alias jspit All Rights Reserved.        |
 ' ------------------------------------------------------------------------- '
 |   License: Distributed under the Lesser General Public License (LGPL)     |
 |            http://www.gnu.org/copyleft/lesser.html                        |
@@ -18,25 +18,38 @@
 
 class SQLiteObjectStore
 {
-    private $pdo;
+    //internal SQLite Table-Name
+    const TABLE = 'store'; 
+    //Key Field Name   
+    const COL_KEY = 'datakey';
+    //Data Field Name  
+    const COL_DATA = 'data';
+    //Field Name Timestamp expires at  
+    const COL_TIMESTAMP = 'expires';
+    
+    protected $pdo;
 
     /*
      * Constructs the class instance
-     * @param filename filename for SQLite
+     * @param filename filename for SQLite, default: :memory:
      * @param deleteOld false then old records will not removed 
+     * @param pdoClassName PDO or a PDO Extension 
      */
-    public function __construct($filename = ':memory:', $deleteOld = true)
+    public function __construct($filename = ':memory:', $deleteOld = true, $pdoClassName = 'PDO')
     {
       $options = array(
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-        
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_OBJ,
       );
-      $this->pdo = new PDO('sqlite:'.$filename,null,null,$options);
+      if(! is_string($filename) OR $filename == "") {
+        $filename = ':memory:';
+      }
+      $this->pdo = new $pdoClassName('sqlite:'.$filename,null,null,$options);
 
-      $sql = 'CREATE TABLE IF NOT EXISTS store (
-             datakey TEXT UNIQUE, 
-             data TEXT , 
-             expires DATETIME) ';
+      $sql = 'CREATE TABLE IF NOT EXISTS '.static::TABLE.' (
+             '.static::COL_KEY.' TEXT UNIQUE, 
+             '.static::COL_DATA.' TEXT , 
+             '.static::COL_TIMESTAMP.' DATETIME) ';
 
       $this->pdo->query($sql);
 
@@ -58,14 +71,15 @@ class SQLiteObjectStore
      * @param key (string)
      * @param data a value(int,string,..),array or object
      *  note: resources,closures and objects with closures cant save 
-     * @param expiresIn string with of the expiration point in time
-     *   expiresIn fix Date how '2017-12-01' or relative Date '2 days'
+     * @param expires string with of the expiration point in time
+     *   expires fix Date how '2017-12-01' or relative Date '2 days'
      * @return true if ok
+     * throw a exception if data cannot serialize
      */
     public function set($key, $data, $expires = '90 Seconds')
     {
-      $sql = 'INSERT OR REPLACE INTO store
-        (datakey, data, expires)
+      $sql = 'INSERT OR REPLACE INTO '.static::TABLE.'
+        ('.static::COL_KEY.', '.static::COL_DATA.', '.static::COL_TIMESTAMP.')
       VALUES 
         (:datakey, :data, :expires)';
 
@@ -94,7 +108,8 @@ class SQLiteObjectStore
         return false;
       }
 
-      $sql = 'SELECT data FROM store WHERE datakey = :datakey';
+      $sql = 'SELECT '.static::COL_DATA.' FROM '.static::TABLE.'
+        WHERE '.static::COL_KEY.' = :datakey';
       $stmt = $this->pdo->prepare($sql);
       $stmt->execute(array('datakey' => $key));
       $data = $stmt->fetchColumn();
@@ -110,7 +125,8 @@ class SQLiteObjectStore
     */
     public function exists($key)
     {
-      $sql = 'SELECT 1 FROM store WHERE datakey = :datakey LIMIT 1';
+      $sql = 'SELECT 1 FROM '.static::TABLE.'
+        WHERE '.static::COL_KEY.' = :datakey LIMIT 1';
       $stmt = $this->pdo->prepare($sql);
       $stmt->execute(array('datakey' => $key));
       return (bool) $stmt->fetchColumn();
@@ -126,11 +142,13 @@ class SQLiteObjectStore
      */
     public function setExpires($key, $expires)
     {
-      if ( ! $this->exists($key) ) {
+      if (!$this->exists($key)) {
         return false;
       }
 
-      $sql = 'UPDATE store SET expires = :expires WHERE datakey = :datakey';
+      $sql = 'UPDATE '.static::TABLE.'
+        SET '.static::COL_TIMESTAMP.' = :expires 
+        WHERE '.static::COL_KEY.' = :datakey';
       $stmt = $this->pdo->prepare($sql);
       $param = array(
         'datakey' => $key,
@@ -145,7 +163,7 @@ class SQLiteObjectStore
      * get expires as DateTime
      *   note: without microseconds
      * @param key
-     * @return true if set ok
+     * @return a datetime object 
      * @return false if key not exists
      */
     public function getExpires($key)
@@ -154,7 +172,9 @@ class SQLiteObjectStore
         return false;
       }
 
-      $sql = 'SELECT expires FROM store WHERE datakey = :datakey';
+      $sql = 'SELECT '.static::COL_TIMESTAMP.' 
+        FROM '.static::TABLE.' 
+        WHERE '.static::COL_KEY.' = :datakey';
       $stmt = $this->pdo->prepare($sql);
       $param = array('datakey' => $key);
       $stmt->execute($param);
@@ -165,7 +185,7 @@ class SQLiteObjectStore
     
 
    /*
-    * remove
+    * delete a entry
     *
     * Deletes entry with key from the store.
     * @param key.
@@ -173,7 +193,8 @@ class SQLiteObjectStore
     */ 
     public function delete($key)
     {
-      $sql = 'DELETE FROM store WHERE datakey = :datakey';
+      $sql = 'DELETE FROM '.static::TABLE.'
+        WHERE '.static::COL_KEY.' = :datakey';
       $stmt = $this->pdo->prepare($sql);
       $stmt->execute(array('datakey' => $key));
 
@@ -188,10 +209,20 @@ class SQLiteObjectStore
      */
     public function deleteOld()
     { 
-      $sql = 'DELETE FROM store WHERE expires < :expires';
+      $sql = 'DELETE FROM '.static::TABLE.'
+        WHERE '.static::COL_TIMESTAMP.' < :expires';
       $stmt = $this->pdo->prepare($sql);
       $stmt->execute(array('expires' => date('Y-m-d H:i:s')));
       return $stmt->rowCount();
+    }
+    
+    /**
+     * getPDO : return PDO-Object
+     * provides the pdo connection that can be used for your own queries
+     */
+    public function getPDO()
+    {
+      return $this->pdo;
     }
  
     //internal only for expire time

@@ -38,6 +38,10 @@ echo '</pre>';
 
 http://jspit.de/check/phpcheck.class.sqliteobjectstore.php
 
+### Documentation
+
+http://jspit.de/tools/classdoc.php?class=sqliteobjectstore
+
 ### Limitations
 
 Not usable for resources, closures and objects with closures
